@@ -3,7 +3,16 @@
 # 当检测到顶层依赖来自推荐依赖(Recommends)时，认定被推荐的包为顶层依赖
 # 支持CSV文件输入输出
 
-set -e
+set -x
+# 不使用 set -e，允许脚本在单个包处理错误后继续执行
+
+# 错误处理函数
+error_handler() {
+  echo "错误发生在第 $1 行: 命令 '$BASH_COMMAND' 返回了错误码 $2"
+  exit $2
+}
+
+trap 'error_handler ${LINENO} $?' ERR
 
 # 帮助信息函数
 show_help() {
@@ -200,7 +209,8 @@ process_csv_file() {
     printf "处理中... [%d/%d] %s\n" "$current_line" "$total_lines" "$pkg"
     
     # 查找顶层依赖
-    find_top_package "$pkg" "$output_mode" "$output_file"
+    echo "开始处理包: $pkg"
+    find_top_package "$pkg" "$output_mode" "$output_file" || echo "处理包 $pkg 失败，错误码: $?"
   done < "$input_file"
   
   echo "✅ 处理完成，结果已保存到: $output_file"
