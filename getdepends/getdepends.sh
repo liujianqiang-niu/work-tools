@@ -34,7 +34,11 @@ find_top_package() {
   local output_file="$3"
   
   # 检查包是否已安装
-  if ! dpkg -l | grep -q "^ii\s\+$pkg\s"; then
+  # 处理包名中可能包含的架构信息（如 package:amd64）
+  local pkg_base=$(echo "$pkg" | cut -d':' -f1)
+  local pkg_arch=$(echo "$pkg" | grep -o ':[^:]*$' || echo '')
+  
+  if ! dpkg -l | grep -q "^ii\s\+$pkg_base\(:[^[:space:]]*\)\?\s"; then
     if [ "$output_mode" = "console" ]; then
       echo "❌ 包 $pkg 未安装"
     elif [ "$output_mode" = "csv" ]; then
@@ -44,7 +48,9 @@ find_top_package() {
   fi
   
   # 开始查找依赖链
-  local current_pkg="$pkg"
+  # 使用不带架构信息的包名进行依赖查询
+  local current_pkg_base=$(echo "$pkg" | cut -d':' -f1)
+  local current_pkg="$current_pkg_base"
   local chain=("$pkg")
   
   if [ "$output_mode" = "console" ]; then
@@ -92,13 +98,16 @@ find_top_package() {
     fi
     
     # 提取父包名（忽略状态列 "i A" 等）
-    parent=$(echo "$parent_line" | awk '{print $2}' | grep -E '^[a-z0-9.+-]+$' | head -n 1)
+    parent=$(echo "$parent_line" | awk '{print $2}' | grep -E '^[a-z0-9.+-]+(:[a-z0-9.+-]+)?$' | head -n 1)
     
     # 如果 parent 为空或 dpkg 查询不到，则跳过并继续尝试下一行
-    if [ -z "$parent" ] || ! dpkg -s "$parent" >/dev/null 2>&1; then
+    # 处理包名中可能包含的架构信息
+    local parent_base=$(echo "$parent" | cut -d':' -f1)
+    if [ -z "$parent" ] || ! dpkg -s "$parent_base" >/dev/null 2>&1; then
       # 尝试找下一行（防止格式异常导致空 parent）
-      parent=$(echo "$parent_line" | awk '{print $3}' | grep -E '^[a-z0-9.+-]+$' | head -n 1)
-      if [ -z "$parent" ] || ! dpkg -s "$parent" >/dev/null 2>&1; then
+      parent=$(echo "$parent_line" | awk '{print $3}' | grep -E '^[a-z0-9.+-]+(:[a-z0-9.+-]+)?$' | head -n 1)
+      local parent_base=$(echo "$parent" | cut -d':' -f1)
+      if [ -z "$parent" ] || ! dpkg -s "$parent_base" >/dev/null 2>&1; then
         # 检查是否存在推荐依赖路径
         recommend_line=$(aptitude why "$current_pkg" 2>/dev/null \
           | grep -E " Recommends " \
