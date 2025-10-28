@@ -75,7 +75,7 @@ find_top_package() {
         elif [ "$output_mode" = "csv" ]; then
           # 将数组转换为以空格分隔的字符串
           local chain_str="${chain[*]}"
-          echo "$pkg,$current_pkg,${chain_str// /,}" >> "$output_file"
+          echo "$pkg,$current_pkg,\"${chain_str}\"" >> "$output_file"
         fi
         return 0
       fi
@@ -86,7 +86,7 @@ find_top_package() {
         echo "依赖链: ${chain[*]}"
       elif [ "$output_mode" = "csv" ]; then
         local chain_str="${chain[*]}"
-        echo "$pkg,$current_pkg,${chain_str// /,}" >> "$output_file"
+        echo "$pkg,$current_pkg,\"${chain_str}\"" >> "$output_file"
       fi
       return 0
     fi
@@ -112,7 +112,7 @@ find_top_package() {
             echo "依赖链: ${chain[*]}"
           elif [ "$output_mode" = "csv" ]; then
             local chain_str="${chain[*]}"
-            echo "$pkg,$current_pkg,${chain_str// /,}" >> "$output_file"
+            echo "$pkg,$current_pkg,\"${chain_str}\"" >> "$output_file"
           fi
           return 0
         fi
@@ -124,7 +124,7 @@ find_top_package() {
           echo "依赖链: ${chain[*]}"
         elif [ "$output_mode" = "csv" ]; then
           local chain_str="${chain[*]}"
-          echo "$pkg,${chain[-1]}(推定),${chain_str// /,}" >> "$output_file"
+          echo "$pkg,${chain[-1]}(推定),\"${chain_str}\"" >> "$output_file"
         fi
         return 0
       fi
@@ -139,7 +139,7 @@ find_top_package() {
         echo "依赖链: ${chain[*]}"
       elif [ "$output_mode" = "csv" ]; then
         local chain_str="${chain[*]}"
-        echo "$pkg,${chain[-1]}(循环依赖),${chain_str// /,}" >> "$output_file"
+        echo "$pkg,${chain[-1]}(循环依赖),\"${chain_str}\"" >> "$output_file"
       fi
       return 0
     fi
@@ -154,7 +154,7 @@ find_top_package() {
         echo "依赖链: ${chain[*]}"
       elif [ "$output_mode" = "csv" ]; then
         local chain_str="${chain[*]}"
-        echo "$pkg,$current_pkg,${chain_str// /,}" >> "$output_file"
+        echo "$pkg,$current_pkg,\"${chain_str}\"" >> "$output_file"
       fi
       return 0
     fi
@@ -175,7 +175,7 @@ find_top_package() {
           echo "依赖链: zenity ${chain[*]}"
         elif [ "$output_mode" = "csv" ]; then
           local chain_str="zenity ${chain[*]}"
-          echo "$pkg,zenity,${chain_str// /,}" >> "$output_file"
+          echo "$pkg,zenity,\"${chain_str}\"" >> "$output_file"
         fi
         return 0
       fi
