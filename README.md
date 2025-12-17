@@ -42,6 +42,35 @@
 输入格式：每行一个包名
 输出格式：查询包,顶层包,依赖链
 
+### file-integrity-check
+
+`file-integrity-check` 包含用于检查文件完整性的脚本 `file_integrity_checker.sh`。该脚本会扫描指定目录下的文件，计算哈希（例如 sha256），并与保存的基线记录比较，以检测新增、删除或修改的文件。
+
+#### 功能特点
+
+- 计算并比较文件哈希（支持 sha256）
+- 支持递归扫描目录
+- 可输出差异报告或更新基线文件
+- 详细用法和参数请见 `file-integrity-check/README.md`
+
+#### 使用方法（示例）
+
+```bash
+# 添加可执行权限
+chmod +x file-integrity-check/file_integrity_checker.sh
+
+# 显示帮助（如果脚本支持 -h 或 --help）
+./file-integrity-check/file_integrity_checker.sh -h
+
+# 示例：扫描 /etc 并将基线保存到 baseline.txt
+./file-integrity-check/file_integrity_checker.sh -s /etc -b baseline.txt
+
+# 示例：比较当前扫描与已有基线
+./file-integrity-check/file_integrity_checker.sh -c /etc -b baseline.txt
+```
+
+请参阅 `file-integrity-check/README.md` 获取更详细的参数说明和示例。
+
 ## 系统要求
 
 - Debian/Ubuntu Linux 系统
@@ -74,6 +103,6 @@ chmod +x work-tools/getdepends/getdepends.sh
 
 ## 联系方式
 
-项目维护者 - [@your_github_username](https://github.com/yourusername)
+项目维护者 - [liujianqiang](https://github.com/liujianqiang-niu)
 
-项目链接：[https://github.com/yourusername/work-tools](https://github.com/yourusername/work-tools)
+项目链接：[https://github.com/liujianqiang-niu/work-tools](https://github.com/liujianqiang-niu/work-tools)
