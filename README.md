@@ -108,30 +108,37 @@ chmod +x file-integrity-check/file_integrity_checker.sh
 
 请参阅 `file-integrity-check/README.md` 获取更详细的参数说明和示例。
 
-### get-dpkg-packages-status
+### get-sys-resource
 
-`get-dpkg-packages-status` 是一个用于获取系统所有 dpkg 包状态的脚本工具，将包信息导出为 CSV 格式文件。
+`get-sys-resource` 是一个用于导出系统资源信息的脚本工具，可将软件包信息、已启用的 systemd 服务信息、监听端口信息分别导出为 CSV 文件。
 
 #### 功能特点
 
-- 获取系统所有已安装包的状态信息
-- 输出包含包状态、名称、版本、架构和描述
-- 结果以 CSV 格式输出，便于后续处理和分析
-- 支持多行描述文本的正确处理
+- 获取系统所有 dpkg 包的状态信息
+- 获取系统已启用的 systemd 服务及服务描述
+- 获取系统当前监听端口及端口说明
+- 所有结果均以 CSV 格式输出，便于后续处理和分析
+- 支持软件包多行描述文本的正确处理
 
 #### 使用方法
 
 ```bash
 # 添加可执行权限
-chmod +x get-dpkg-packages-status/get-dpkg-packages-status.sh
+chmod +x get-sys-resource/get-sys-resource.sh
 
-# 运行脚本，生成 output.csv 文件
-./get-dpkg-packages-status/get-dpkg-packages-status.sh
+# 运行脚本，生成多份 CSV 文件
+./get-sys-resource/get-sys-resource.sh
 ```
 
 #### 输出格式
 
-脚本会生成 `output.csv` 文件，包含以下字段：
+脚本会生成以下 CSV 文件：
+
+1. `packages.csv`：软件包信息
+2. `systemd_enabled_services.csv`：已启用的 systemd 服务信息
+3. `listening_ports.csv`：监听端口信息
+
+其中 `packages.csv` 包含以下字段：
 
 | 字段 | 说明 |
 |------|------|
@@ -141,12 +148,32 @@ chmod +x get-dpkg-packages-status/get-dpkg-packages-status.sh
 | Architecture | 包架构 |
 | Description | 包描述 |
 
+`systemd_enabled_services.csv` 包含以下字段：
+
+| 字段 | 说明 |
+|------|------|
+| UnitFile | 服务单元文件名 |
+| EnabledState | 启用状态 |
+| ServiceName | 服务名称 |
+| Description | 服务描述 |
+
+`listening_ports.csv` 包含以下字段：
+
+| 字段 | 说明 |
+|------|------|
+| Protocol | 协议类型（tcp/udp 等） |
+| Port | 监听端口 |
+| Address | 监听地址 |
+| Process | 对应进程名 |
+| Description | 端口说明 |
+
 #### 使用场景
 
 - 系统包状态审计
 - 软件资产清单导出
-- 系统迁移前的包列表备份
-- 与其他系统进行包对比分析
+- systemd 自启服务盘点
+- 系统开放端口核查
+- 系统迁移前的资源信息备份与对比分析
 
 ## 系统要求
 
