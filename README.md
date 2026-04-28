@@ -42,6 +42,43 @@
 输入格式：每行一个包名
 输出格式：查询包,顶层包,依赖链
 
+### app-proc-to-dbg
+
+`app-proc-to-dbg` 是一个用于查找进程加载的共享库（.so 文件）对应调试包的工具。它可以分析指定进程加载的所有 .so 文件，自动查找对应的软件包和调试符号包，并生成一键安装命令。
+
+#### 功能特点
+
+- 分析进程加载的所有 .so 文件
+- 自动映射 .so 文件到所属软件包
+- 查找对应的调试符号包（支持 -dbgsym 和 -dbg 后缀）
+- 生成一键安装所有调试包的命令
+- 去重显示，避免重复推荐
+
+#### 使用方法
+
+```bash
+# 添加可执行权限
+chmod +x app-proc-to-dbg/app-proc-to-dbg.sh
+
+# 分析指定PID的进程（默认PID为2338）
+./app-proc-to-dbg/app-proc-to-dbg.sh <PID>
+
+# 示例：分析PID为1234的进程
+./app-proc-to-dbg/app-proc-to-dbg.sh 1234
+```
+
+#### 输出说明
+
+脚本会输出两部分信息：
+1. 软件包与调试包的映射关系
+2. 一键安装所有调试包的 apt 命令
+
+#### 使用场景
+
+- 调试运行中的程序时需要安装调试符号
+- 性能分析工具（如 perf、gdb）需要调试信息
+- 排查进程依赖库的问题
+
 ### file-integrity-check
 
 `file-integrity-check` 包含用于检查文件完整性的脚本 `file_integrity_checker.sh`。该脚本会扫描指定目录下的文件，计算哈希（例如 sha256），并与保存的基线记录比较，以检测新增、删除或修改的文件。
@@ -70,6 +107,46 @@ chmod +x file-integrity-check/file_integrity_checker.sh
 ```
 
 请参阅 `file-integrity-check/README.md` 获取更详细的参数说明和示例。
+
+### get-dpkg-packages-status
+
+`get-dpkg-packages-status` 是一个用于获取系统所有 dpkg 包状态的脚本工具，将包信息导出为 CSV 格式文件。
+
+#### 功能特点
+
+- 获取系统所有已安装包的状态信息
+- 输出包含包状态、名称、版本、架构和描述
+- 结果以 CSV 格式输出，便于后续处理和分析
+- 支持多行描述文本的正确处理
+
+#### 使用方法
+
+```bash
+# 添加可执行权限
+chmod +x get-dpkg-packages-status/get-dpkg-packages-status.sh
+
+# 运行脚本，生成 output.csv 文件
+./get-dpkg-packages-status/get-dpkg-packages-status.sh
+```
+
+#### 输出格式
+
+脚本会生成 `output.csv` 文件，包含以下字段：
+
+| 字段 | 说明 |
+|------|------|
+| Status | 包状态（如 installed、deinstall 等） |
+| Name | 包名称 |
+| Version | 包版本 |
+| Architecture | 包架构 |
+| Description | 包描述 |
+
+#### 使用场景
+
+- 系统包状态审计
+- 软件资产清单导出
+- 系统迁移前的包列表备份
+- 与其他系统进行包对比分析
 
 ## 系统要求
 
