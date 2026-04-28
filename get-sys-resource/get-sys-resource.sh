@@ -38,10 +38,30 @@ write_systemd_csv() {
 }
 
 get_port_description() {
-    local port="$1"
-    local process_info="$2"
+    local pid="$1"
+    local port="$2"
+    local process_info="$3"
+    local binary_path=""
+    local pkg_name=""
+    local pkg_desc=""
     local service_name=""
 
+    # 通过 PID 获取二进制路径
+    if [ -n "${pid}" ] && [ "${pid}" != "0" ] && [ "${pid}" != "-" ]; then
+        binary_path=$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)
+        
+        # 通过二进制路径查询所属包
+        if [ -n "${binary_path}" ]; then
+            pkg_name=$(dpkg -S "${binary_path}" 2>/dev/null | cut -d: -f1 | head -1 || true)
+            
+            # 通过包名获取包描述
+            if [ -n "${pkg_name}" ]; then
+                pkg_desc=$(dpkg-query -W -f='${Description}' "${pkg_name}" 2>/dev/null | head -1 || true)
+            fi
+        fi
+    fi
+
+    # 从 /etc/services 获取服务名作为补充
     service_name=$(awk -v port="${port}" '
         $2 ~ ("^" port "/") {
             print $1
@@ -49,7 +69,14 @@ get_port_description() {
         }
     ' /etc/services 2>/dev/null || true)
 
-    if [ -n "${process_info}" ] && [ -n "${service_name}" ]; then
+    # 组合描述信息：优先使用包描述，其次进程名+服务名
+    if [ -n "${pkg_desc}" ]; then
+        if [ -n "${service_name}" ]; then
+            printf '%s (%s)' "${pkg_desc}" "${service_name}"
+        else
+            printf '%s' "${pkg_desc}"
+        fi
+    elif [ -n "${process_info}" ] && [ -n "${service_name}" ]; then
         printf '%s (%s)' "${process_info}" "${service_name}"
     elif [ -n "${process_info}" ]; then
         printf '%s' "${process_info}"
@@ -63,25 +90,38 @@ get_port_description() {
 write_ports_csv() {
     echo "Protocol,Port,Address,Process,Description" > "${PORT_CSV}"
 
-    command_exists ss || return 0
+    command_exists netstat || return 0
 
-    ss -lntupH 2>/dev/null | \
-    while read -r netid state recv_q send_q local_address peer_address process; do
-        [ -n "${local_address:-}" ] || continue
+    netstat -lntup 2>/dev/null | \
+    while read -r proto recv_q send_q local_addr foreign_addr state pid_program; do
+        # 跳过标题行和空行
+        [ -n "${local_addr:-}" ] || continue
+        [[ "${proto}" =~ ^(tcp|tcp6|udp|udp6)$ ]] || continue
 
-        port="${local_address##*:}"
-        address="${local_address%:*}"
+        # 解析端口和地址
+        port="${local_addr##*:}"
+        address="${local_addr%:*}"
 
         if [ "${address}" = "${port}" ]; then
-            address="${local_address}"
+            address="${local_addr}"
         fi
 
-        process_name=$(printf '%s' "${process:-}" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')
-        description=$(get_port_description "${port}" "${process_name}")
+        # 解析 PID 和进程名 (格式: PID/Program name)
+        pid=""
+        process_name=""
+        if [ -n "${pid_program:-}" ]; then
+            pid=$(echo "${pid_program}" | cut -d'/' -f1 2>/dev/null || true)
+            process_name=$(echo "${pid_program}" | cut -d'/' -f2 2>/dev/null || true)
+        fi
+
+        description=$(get_port_description "${pid}" "${port}" "${process_name}")
         description=${description//\"/\"\"}
 
+        # 处理协议名（去除数字后缀，如 tcp6 -> tcp）
+        proto_clean="${proto%%[0-9]*}"
+
         printf '%s,%s,%s,%s,"%s"\n' \
-            "$netid" "$port" "$address" "${process_name:-N/A}" "$description" >> "${PORT_CSV}"
+            "$proto_clean" "$port" "$address" "${process_name:-N/A}" "$description" >> "${PORT_CSV}"
     done
 }
 
