@@ -37,28 +37,53 @@ write_systemd_csv() {
     done
 }
 
+# 通过进程名或 PID 获取包名和描述
+get_process_package_info() {
+    local pid="$1"
+    local process_name="$2"
+    local binary_path=""
+    local pkg_name=""
+
+    # 优先通过 PID 获取二进制路径
+    if [ -n "${pid}" ] && [ "${pid}" != "0" ] && [ "${pid}" != "-" ]; then
+        binary_path=$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)
+    fi
+
+    # 如果通过 PID 获取失败，尝试通过进程名查找
+    if [ -z "${binary_path}" ] && [ -n "${process_name}" ] && [ "${process_name}" != "-" ] && [ "${process_name}" != "N/A" ]; then
+        # 尝试通过 which 查找二进制路径
+        binary_path=$(which "${process_name}" 2>/dev/null || true)
+        
+        # 如果 which 找不到，尝试在常见路径查找
+        if [ -z "${binary_path}" ]; then
+            for dir in /usr/sbin /usr/bin /sbin /bin /usr/lib /usr/libexec; do
+                if [ -x "${dir}/${process_name}" ]; then
+                    binary_path="${dir}/${process_name}"
+                    break
+                fi
+            done
+        fi
+    fi
+
+    # 通过二进制路径查询所属包
+    if [ -n "${binary_path}" ]; then
+        pkg_name=$(dpkg -S "${binary_path}" 2>/dev/null | cut -d: -f1 | head -1 || true)
+    fi
+
+    printf '%s' "${pkg_name:-N/A}"
+}
+
 get_port_description() {
     local pid="$1"
     local port="$2"
     local process_info="$3"
-    local binary_path=""
-    local pkg_name=""
+    local pkg_name="$4"
     local pkg_desc=""
     local service_name=""
 
-    # 通过 PID 获取二进制路径
-    if [ -n "${pid}" ] && [ "${pid}" != "0" ] && [ "${pid}" != "-" ]; then
-        binary_path=$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)
-        
-        # 通过二进制路径查询所属包
-        if [ -n "${binary_path}" ]; then
-            pkg_name=$(dpkg -S "${binary_path}" 2>/dev/null | cut -d: -f1 | head -1 || true)
-            
-            # 通过包名获取包描述
-            if [ -n "${pkg_name}" ]; then
-                pkg_desc=$(dpkg-query -W -f='${Description}' "${pkg_name}" 2>/dev/null | head -1 || true)
-            fi
-        fi
+    # 通过包名获取包描述
+    if [ -n "${pkg_name}" ] && [ "${pkg_name}" != "N/A" ]; then
+        pkg_desc=$(dpkg-query -W -f='${Description}' "${pkg_name}" 2>/dev/null | head -1 || true)
     fi
 
     # 从 /etc/services 获取服务名作为补充
@@ -76,9 +101,9 @@ get_port_description() {
         else
             printf '%s' "${pkg_desc}"
         fi
-    elif [ -n "${process_info}" ] && [ -n "${service_name}" ]; then
+    elif [ -n "${process_info}" ] && [ "${process_info}" != "N/A" ] && [ -n "${service_name}" ]; then
         printf '%s (%s)' "${process_info}" "${service_name}"
-    elif [ -n "${process_info}" ]; then
+    elif [ -n "${process_info}" ] && [ "${process_info}" != "N/A" ]; then
         printf '%s' "${process_info}"
     elif [ -n "${service_name}" ]; then
         printf '%s' "${service_name}"
@@ -88,15 +113,25 @@ get_port_description() {
 }
 
 write_ports_csv() {
-    echo "Protocol,Port,Address,Process,Description" > "${PORT_CSV}"
+    echo "Protocol,Port,Address,Process,Package,Description" > "${PORT_CSV}"
 
     command_exists netstat || return 0
 
     netstat -lntup 2>/dev/null | \
-    while read -r proto recv_q send_q local_addr foreign_addr state pid_program; do
-        # 跳过标题行和空行
-        [ -n "${local_addr:-}" ] || continue
+    while IFS= read -r line; do
+        # 跳过标题行
+        [[ "${line}" =~ ^Proto ]] && continue
+        # 跳过空行
+        [ -z "${line}" ] && continue
+
+        # 解析行内容，netstat 输出格式可能包含多列
+        proto=$(echo "${line}" | awk '{print $1}')
+        
+        # 跳过非协议行
         [[ "${proto}" =~ ^(tcp|tcp6|udp|udp6)$ ]] || continue
+
+        local_addr=$(echo "${line}" | awk '{print $4}')
+        [ -n "${local_addr:-}" ] || continue
 
         # 解析端口和地址
         port="${local_addr##*:}"
@@ -106,22 +141,36 @@ write_ports_csv() {
             address="${local_addr}"
         fi
 
-        # 解析 PID 和进程名 (格式: PID/Program name)
+        # 解析 PID 和进程名 (格式: PID/Program name 或 PID/Program name: extra)
+        # netstat 的最后一列可能是 PID/Program 或 state (对于 UDP)
         pid=""
         process_name=""
-        if [ -n "${pid_program:-}" ]; then
-            pid=$(echo "${pid_program}" | cut -d'/' -f1 2>/dev/null || true)
-            process_name=$(echo "${pid_program}" | cut -d'/' -f2 2>/dev/null || true)
+        
+        # 提取最后一列（PID/Program name）
+        last_col=$(echo "${line}" | awk '{print $NF}')
+        
+        # 使用正则提取 PID（连续数字）
+        if [[ "${last_col}" =~ ^([0-9]+)/ ]]; then
+            pid="${BASH_REMATCH[1]}"
+            # 提取进程名，去除斜杠前的 PID，然后取第一个字段（去除冒号后的额外信息）
+            process_name_raw="${last_col#*/}"
+            # 进程名可能在冒号后有额外信息，只取冒号前的部分
+            process_name=$(echo "${process_name_raw}" | cut -d':' -f1 | awk '{print $1}')
         fi
 
-        description=$(get_port_description "${pid}" "${port}" "${process_name}")
+        # 获取包名
+        pkg_name=$(get_process_package_info "${pid}" "${process_name:-}")
+
+        # 获取描述
+        description=$(get_port_description "${pid}" "${port}" "${process_name:-N/A}" "${pkg_name}")
         description=${description//\"/\"\"}
+        pkg_name=${pkg_name//\"/\"\"}
 
         # 处理协议名（去除数字后缀，如 tcp6 -> tcp）
         proto_clean="${proto%%[0-9]*}"
 
-        printf '%s,%s,%s,%s,"%s"\n' \
-            "$proto_clean" "$port" "$address" "${process_name:-N/A}" "$description" >> "${PORT_CSV}"
+        printf '%s,%s,%s,%s,%s,"%s"\n' \
+            "$proto_clean" "$port" "$address" "${process_name:-N/A}" "${pkg_name}" "$description" >> "${PORT_CSV}"
     done
 }
 

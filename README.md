@@ -170,7 +170,8 @@ chmod +x get-sys-resource/get-sys-resource.sh
 | Port | 监听端口 |
 | Address | 监听地址 |
 | Process | 对应进程名 |
-| Description | 端口说明 |
+| Package | 所属 deb 包名 |
+| Description | 端口功能说明 |
 
 #### 使用场景
 
