@@ -15,8 +15,50 @@ write_packages_csv() {
     command_exists dpkg-query || return 0
 
     echo "Status,Name,Version,Architecture,Description" > "${PKG_CSV}"
-    dpkg-query -W -f='${db:Status-Status},${Package},${Version},${Architecture},"${Description}"\n' | \
-    sed ':a;N;$!ba;s/\n / /g' >> "${PKG_CSV}"
+    # 使用 AWK 处理 CSV 格式，正确转义描述中的双引号
+    # dpkg-query 输出中，描述可能包含换行符（以空格开头的续行）
+    dpkg-query -W -f='${db:Status-Status},${Package},${Version},${Architecture},${Description}\n' | \
+    awk '
+    BEGIN { FS=","; OFS="," }
+    # 正确格式的行：以状态开头（installed, not-installed 等）
+    /^(installed|not-installed|half-configured|half-installed|config-files|post-inst-failed|removal-failed|absent),/ {
+        # 如果有上一条未完成的记录，先输出
+        if (NR > 1 && status != "") {
+            gsub(/"/, "\"\"", desc)
+            print status","name","version","arch",\""desc"\""
+        }
+        # 解析新记录的前4个字段
+        status = $1
+        name = $2
+        version = $3
+        arch = $4
+        # 第5个字段开始是描述（可能包含逗号）
+        desc = ""
+        for (i=5; i<=NF; i++) {
+            if (desc != "") desc = desc ","
+            desc = desc $i
+        }
+        # 移除描述开头的空格
+        gsub(/^[ \t]+/, "", desc)
+        next
+    }
+    # 续行：描述中的换行，以空格开头
+    /^[ \t]/ {
+        # 追加到描述
+        desc = desc " " $0
+        next
+    }
+    # 处理其他情况
+    {
+        desc = desc " " $0
+    }
+    END {
+        # 输出最后一条记录
+        if (status != "") {
+            gsub(/"/, "\"\"", desc)
+            print status","name","version","arch",\""desc"\""
+        }
+    }' >> "${PKG_CSV}"
 }
 
 write_systemd_csv() {
@@ -134,28 +176,45 @@ write_ports_csv() {
         [ -n "${local_addr:-}" ] || continue
 
         # 解析端口和地址
-        port="${local_addr##*:}"
-        address="${local_addr%:*}"
-
-        if [ "${address}" = "${port}" ]; then
-            address="${local_addr}"
+        # IPv6 地址包含多个冒号，端口是最后一个冒号后面的数字
+        # IPv4 地址只有一个冒号分隔地址和端口
+        # IPv6 格式示例: "::1:631", ":::22", "fe80::1:80"
+        # IPv4 格式示例: "127.0.0.1:80", "0.0.0.0:22"
+        
+        port="${local_addr##*:}"      # 提取最后一个冒号后的内容作为端口
+        address="${local_addr%:*}"    # 提取最后一个冒号前的内容作为地址
+        
+        # 如果地址为空（如 "::1:631" 的情况），说明是 IPv6 地址
+        # 需要重新处理：地址应该是去掉最后一个 :端口 后的完整部分
+        if [ -z "${address}" ]; then
+            # 对于 "::1:631" 这种情况，local_addr 是 "::1:631"
+            # port="631", address=""，需要重新提取
+            # 实际上地址应该是 "::1"
+            address="${local_addr%:${port}}"
+        fi
+        
+        # 如果端口不是纯数字，说明解析有问题（可能是 IPv6 地址的一部分）
+        # 这种情况下整个 local_addr 应该被视为地址，端口可能需要从其他地方获取
+        if ! [[ "${port}" =~ ^[0-9]+$ ]]; then
+            # 端口不是数字，跳过此行
+            continue
         fi
 
         # 解析 PID 和进程名 (格式: PID/Program name 或 PID/Program name: extra)
-        # netstat 的最后一列可能是 PID/Program 或 state (对于 UDP)
+        # netstat 的 PID/Program name 可能在行尾且包含空格
         pid=""
         process_name=""
         
-        # 提取最后一列（PID/Program name）
-        last_col=$(echo "${line}" | awk '{print $NF}')
-        
-        # 使用正则提取 PID（连续数字）
-        if [[ "${last_col}" =~ ^([0-9]+)/ ]]; then
+        # 使用正则从整行中提取 PID/Program name 部分
+        # 匹配格式: 数字/进程名（进程名可包含字母、数字、下划线、连字符、点号等）
+        # 进程名后面可能有空格和其他参数
+        if [[ "${line}" =~ ([0-9]+)/([a-zA-Z0-9_.:-]+)[[:space:]]*$ ]]; then
             pid="${BASH_REMATCH[1]}"
-            # 提取进程名，去除斜杠前的 PID，然后取第一个字段（去除冒号后的额外信息）
-            process_name_raw="${last_col#*/}"
-            # 进程名可能在冒号后有额外信息，只取冒号前的部分
-            process_name=$(echo "${process_name_raw}" | cut -d':' -f1 | awk '{print $1}')
+            process_name="${BASH_REMATCH[2]}"
+        elif [[ "${line}" =~ ([0-9]+)/([a-zA-Z0-9_.:-]+)[[:space:]] ]]; then
+            # 进程名后有空格（如 "1234/chrome --type"）
+            pid="${BASH_REMATCH[1]}"
+            process_name="${BASH_REMATCH[2]}"
         fi
 
         # 获取包名
@@ -166,11 +225,10 @@ write_ports_csv() {
         description=${description//\"/\"\"}
         pkg_name=${pkg_name//\"/\"\"}
 
-        # 处理协议名（去除数字后缀，如 tcp6 -> tcp）
-        proto_clean="${proto%%[0-9]*}"
+        # 保留原始协议名（tcp/tcp6/udp/udp6）
 
         printf '%s,%s,%s,%s,%s,"%s"\n' \
-            "$proto_clean" "$port" "$address" "${process_name:-N/A}" "${pkg_name}" "$description" >> "${PORT_CSV}"
+            "$proto" "$port" "$address" "${process_name:-N/A}" "${pkg_name}" "$description" >> "${PORT_CSV}"
     done
 }
 
