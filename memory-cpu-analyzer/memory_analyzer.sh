@@ -131,8 +131,8 @@ generate_report() {
 
     # 写入Top N进程信息
     sort_col_name=$([ "$sort_by" == "cpu" ] && echo "CPU" || echo "内存")
-    echo "--- Top $top_n_processes 按${sort_col_name}占用排序的进程 ---,---,---,---,---,---,---,---,---" >> "$output_target"
-    echo "排名,PPID,PID,用户,CPU使用率 (%),内存使用量 (MB),共享内存 (MB),内存使用率 (%),启动命令" >> "$output_target"
+    echo "--- Top $top_n_processes 按${sort_col_name}占用排序的进程 ---,---,---,---,---,---,---,---,---,---,---" >> "$output_target"
+    echo "排名,PPID,PID,用户,CPU使用率 (%),内存使用量 (MB),共享内存 (MB),内存使用率 (%),启动命令,所属包名,包描述信息" >> "$output_target"
     
     # 根据排序选择确定 ps 的 --sort 参数
     sort_key=$([ "$sort_by" == "cpu" ] && echo "-pcpu" || echo "-rss")
@@ -178,7 +178,36 @@ generate_report() {
         gsub("\"", "\"\"", command); # Escape double quotes
         gsub(",", ";", command);
 
-        print rank "," ppid "," pid "," user "," cpu_percent "," mem_mb "," shr_mb "," mem_percent ",\"" command "\"";
+        # 获取所属包名和包描述信息
+        pkg_name = "";
+        pkg_desc = "";
+        exe_path = "/proc/" pid "/exe";
+        # 读取符号链接获取实际可执行文件路径
+        cmd = "readlink -f " exe_path " 2>/dev/null";
+        if ((cmd | getline real_exe) > 0) {
+            close(cmd);
+            if (real_exe != "") {
+                # 使用 dpkg -S 查询包名
+                dpkg_cmd = "dpkg -S " real_exe " 2>/dev/null | cut -d: -f1";
+                if ((dpkg_cmd | getline pkg_name) > 0) {
+                    close(dpkg_cmd);
+                    if (pkg_name != "") {
+                        # 使用 dpkg -s 获取包描述
+                        desc_cmd = "dpkg -s " pkg_name " 2>/dev/null | grep -m1 \"^Description:\" | cut -d: -f2-";
+                        if ((desc_cmd | getline pkg_desc) > 0) {
+                            close(desc_cmd);
+                        }
+                    }
+                }
+            }
+        }
+        
+        # 处理包描述中的特殊字符
+        gsub("\"", "\"\"", pkg_desc);
+        gsub(",", ";", pkg_desc);
+        gsub(/^ +| +$/, "", pkg_desc); # 去除首尾空格
+
+        print rank "," ppid "," pid "," user "," cpu_percent "," mem_mb "," shr_mb "," mem_percent ",\"" command "\"," pkg_name ",\"" pkg_desc "\"";
         rank++;
     }' >> "$output_target"
 
